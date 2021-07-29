@@ -1,0 +1,9 @@
+## Rust
+server/target
+server/Cargo.lock
+
+## Others
+*.swp
+*.swo
+.DS_Store
+
