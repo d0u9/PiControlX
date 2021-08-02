@@ -8,7 +8,7 @@ mod disk;
 use disk::DiskCache;
 
 pub(crate) trait Cache {
-    fn run(&self);
+    fn run(&self, shutdown: shutdown::Receiver);
     fn get_type(&self) -> ServiceType;
 }
 
@@ -30,43 +30,37 @@ impl CacheManagerHandler {
 
 pub(crate) struct CacheManager {
     caches: Vec<Option<Box<dyn Cache + Send + Sync>>>,
-    shutdown_client: shutdown::Receiver,
 }
 
 impl CacheManager {
-    pub(crate) fn new() -> (Self, CacheManagerHandler) {
-        let (sender, receiver) = shutdown::new();
+    pub(crate) fn new() -> Self {
         let mut caches = Vec::with_capacity(ServiceType::LEN as usize);
         caches.resize_with(ServiceType::LEN as usize, || None);
-        (
-            CacheManager {
-                caches,
-                shutdown_client: receiver,
-            },
-            CacheManagerHandler { shutdown: sender },
-        )
+
+        CacheManager { caches }
     }
 
     pub(crate) fn create_caches(&mut self, server: &mut Server) {
         // Add hello cache
-        let (cache, handler) =
-            HelloCache::new(self.shutdown_client.clone(), server.event_q.clone());
+        let (cache, handler) = HelloCache::new(server.event_q.clone());
         server.add_cache(handler.get_type(), Box::new(handler));
         self.add_cache(cache.get_type(), Box::new(cache));
 
         // Add disk cache
-        let (cache, handler) = DiskCache::new(self.shutdown_client.clone(), server.event_q.clone());
+        let (cache, handler) = DiskCache::new(server.event_q.clone());
         server.add_cache(handler.get_type(), Box::new(handler));
         self.add_cache(cache.get_type(), Box::new(cache));
     }
 
-    pub(crate) fn run(&self) {
+    pub(crate) fn run(&mut self) -> CacheManagerHandler {
+        let (sender, receiver) = shutdown::new();
         for c in self.caches.iter() {
             match c {
-                Some(c) => c.run(),
+                Some(c) => c.run(receiver.clone()),
                 _ => continue,
             }
         }
+        CacheManagerHandler { shutdown: sender }
     }
 
     pub fn add_cache(&mut self, service_type: ServiceType, cache: Box<dyn Cache + Send + Sync>) {

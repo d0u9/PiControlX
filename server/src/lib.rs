@@ -21,18 +21,18 @@ pub async fn lib_main() {
     setup_logger();
 
     log::info!("async main start...");
-    let (mut server, server_handler) = Server::new();
-    let (mut cache_manager, cache_manager_handler) = caches::CacheManager::new();
+    let addr = "[::1]:50051".parse().unwrap();
+    let (mut server, server_handler) = Server::new(addr);
+    let mut cache_manager = caches::CacheManager::new();
     cache_manager.create_caches(&mut server);
 
-    tokio::spawn(async move {
+    let handler1 = tokio::spawn(async move {
         server.serve().await;
     });
 
-    tokio::spawn(async move {
-        cache_manager.run();
-    });
+    let cache_manager_handler = cache_manager.run();
 
     signal::ctrl_c().await.unwrap();
     tokio::join!(server_handler.shutdown(), cache_manager_handler.shutdown());
+    handler1.await.unwrap();
 }

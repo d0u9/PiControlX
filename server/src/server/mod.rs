@@ -10,19 +10,20 @@ pub(crate) enum ServiceType {
     LEN,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct PreservedServiceData {
     pub(crate) data: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct DiskServiceData {
     pub(crate) data: u32,
 }
 
 #[allow(dead_code)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum ServiceData {
+    None,
     Preserved(PreservedServiceData),
     Disk(DiskServiceData),
 }

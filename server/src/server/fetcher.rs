@@ -1,9 +1,11 @@
 use log;
 use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::Notify;
 
 use super::event_queue::EventQ;
-use super::ServiceType;
+use super::{ServiceData, ServiceType};
 use crate::caches::CacheHandler;
 use crate::public::shutdown;
 
@@ -49,14 +51,27 @@ impl Fetcher {
         self.event_queue = Some(q);
     }
 
-    pub(super) async fn wait_event(&mut self) {
+    pub(super) async fn wait_event(&mut self, data_chan: mpsc::Sender<ServiceData>) {
+        let mut notified = false;
+        let mut shutdown = self.shutdown.clone();
         loop {
             tokio::select! {
-                _ = self.notifier.inner.notified() => {
+                _ = self.notifier.inner.notified(), if !notified => {
+                    notified = true;
                     log::info!("Fetcher is notified, new event incoming...");
-                    self.handle_events();
                 }
-                _ = self.shutdown.wait_on() => {
+                v = self.handle_events(data_chan.clone()), if notified => {
+                    notified = false;
+                    match v {
+                        Err(e) => {
+                            log::error!("Send error: {:?}", e);
+                        }
+                        _ => {
+                            log::info!("Data processed");
+                        }
+                    }
+                }
+                _ = shutdown.wait_on() => {
                     println!("Fetcher received shutting down signal");
                     break;
                 }
@@ -73,15 +88,27 @@ impl Fetcher {
         self.caches[idx] = Some(cache);
     }
 
-    fn handle_single_event(&self, service_type: ServiceType) {
+    async fn handle_single_event(
+        &self,
+        service_type: ServiceType,
+        data_chan: &mpsc::Sender<ServiceData>,
+    ) -> Result<(), TrySendError<ServiceData>> {
         let cache = self.caches[service_type as usize].as_ref();
         match cache {
-            Some(c) => log::info!("Handle data from {:?} = {:?}", c.get_type(), c.fetch()),
-            _ => return,
+            Some(c) => {
+                let data = c.fetch();
+                log::info!("Handle data from {:?} = {:?}", c.get_type(), &data);
+                data_chan.try_send(data)?;
+            }
+            _ => return Ok(()),
         }
+        Ok(())
     }
 
-    fn handle_events(&self) {
+    async fn handle_events(
+        &self,
+        data_chan: mpsc::Sender<ServiceData>,
+    ) -> Result<(), TrySendError<ServiceData>> {
         if self.event_queue.is_none() {
             log::error!("Fetcher cannot handle event, no event queue is registered");
         }
@@ -90,7 +117,8 @@ impl Fetcher {
         let events = q.drain();
         for e in events.iter() {
             log::trace!("Processing event: {:?}", e);
-            self.handle_single_event(e.service_type);
+            self.handle_single_event(e.service_type, &data_chan).await?;
         }
+        Ok(())
     }
 }

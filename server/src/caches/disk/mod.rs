@@ -7,25 +7,20 @@ use crate::server::event_queue::{Event, EventQ};
 use crate::server::{DiskServiceData, ServiceData, ServiceType};
 
 struct DataGenerator {
-    shutdown: shutdown::Receiver,
     data: DiskCacheData,
     event_queue: EventQ,
 }
 
 impl DataGenerator {
-    fn new(shutdown: shutdown::Receiver, data: DiskCacheData, event_queue: EventQ) -> Self {
-        Self {
-            event_queue,
-            shutdown,
-            data,
-        }
+    fn new(data: DiskCacheData, event_queue: EventQ) -> Self {
+        Self { event_queue, data }
     }
 
-    async fn run(&mut self) {
+    async fn run(&mut self, mut shutdown: shutdown::Receiver) {
         log::info!("DiskCache - Data generator is running...");
         loop {
             tokio::select! {
-                _ = self.shutdown.wait_on() => {
+                _ = shutdown.wait_on() => {
                     log::warn!("Disk Cache - Data generator is shutting down");
                     break;
                 }
@@ -65,21 +60,16 @@ impl CacheHandler for DiskCacheHandler {
 pub(crate) struct DiskCache {
     event_queue: EventQ,
     service_type: ServiceType,
-    shutdown: shutdown::Receiver,
     data: DiskCacheData,
 }
 
 impl DiskCache {
-    pub(super) fn new(
-        shutdown: shutdown::Receiver,
-        event_queue: EventQ,
-    ) -> (Self, DiskCacheHandler) {
+    pub(super) fn new(event_queue: EventQ) -> (Self, DiskCacheHandler) {
         let data = DiskCacheData::new();
         let cache = Self {
             data: data.clone(),
             event_queue,
             service_type: ServiceType::DISK,
-            shutdown,
         };
 
         let cache_handler = DiskCacheHandler {
@@ -92,15 +82,11 @@ impl DiskCache {
 }
 
 impl Cache for DiskCache {
-    fn run(&self) {
+    fn run(&self, shutdown: shutdown::Receiver) {
         log::info!("DiskCache start running...");
-        let mut generator = DataGenerator::new(
-            self.shutdown.clone(),
-            self.data.clone(),
-            self.event_queue.clone(),
-        );
+        let mut generator = DataGenerator::new(self.data.clone(), self.event_queue.clone());
         tokio::spawn(async move {
-            generator.run().await;
+            generator.run(shutdown).await;
         });
     }
 

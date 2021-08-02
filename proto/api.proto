@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+option go_package = "./pb";
+
+package api;
+
+service Api {
+  rpc DiskListAndWatch(DiskListAndWatchRequest) returns (stream DiskListAndWatchResponse) {}
+}
+
+message DiskFilter {
+  enum Filter {
+    ALL = 0;        // Mounted and unmounted disks
+    Mounted = 1;    // Mounted disks
+    Unmounted = 2;  // Unmounted disks
+    ByName = 3;     // Disk name, e.g. sda
+    ByLabel = 4;    // Disk label
+  }
+  Filter filter = 1;
+  string filter_options = 2;
+}
+
+message DiskListAndWatchRequest {
+  DiskFilter filter = 1;
+}
+
+message Disk {
+  string name = 1;
+  uint64 size = 2;
+  string uuid = 3;
+  bool mounted = 4;
+  string mount_point = 5;
+  string label = 6;
+}
+
+message DiskListAndWatchResponse {
+  repeated Disk disks = 1;
+}
+
