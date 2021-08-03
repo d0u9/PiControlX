@@ -1,7 +1,7 @@
 use futures::FutureExt;
 use std::net::SocketAddr;
 
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, broadcast};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Server as TonicServer;
 use tonic::{Request, Response, Status};
@@ -28,6 +28,7 @@ impl ServerHandler {
 }
 
 pub(crate) struct Server {
+    shutdown: shutdown::Receiver,
     addr: SocketAddr,
     fetcher: Fetcher,
     pub(crate) event_q: EventQ,
@@ -36,11 +37,12 @@ pub(crate) struct Server {
 impl Server {
     pub fn new(addr: SocketAddr) -> (Self, ServerHandler) {
         let (s, r) = shutdown::new();
-        let (mut fetcher, notifier) = Fetcher::new(r);
+        let (mut fetcher, notifier) = Fetcher::new(r.clone());
         let event_queue = EventQ::new(notifier);
         fetcher.add_event_queue(event_queue.clone());
         (
             Server {
+                shutdown: r,
                 addr,
                 fetcher,
                 event_q: event_queue,
@@ -50,8 +52,8 @@ impl Server {
     }
 
     pub async fn serve(&mut self) {
-        let (chan_tx, chan_rx) = mpsc::channel(2);
-        let service = GrpcService::new(chan_rx);
+        let (chan_tx, _) = broadcast::channel(2);
+        let service = GrpcService::new(self.shutdown.clone(), chan_tx.clone());
         let grpc_server = TonicServer::builder().add_service(api_server::ApiServer::new(service));
         let (tx, rx) = oneshot::channel::<()>();
         let addr = self.addr.clone();
@@ -64,7 +66,7 @@ impl Server {
 
         self.fetcher.wait_event(chan_tx).await;
         log::warn!("GRPC server is shutting down...");
-        tx.send(()).unwrap();
+        tx.send(()).unwrap(); // shutting down server
         handler.await.unwrap();
     }
 
@@ -78,17 +80,20 @@ impl Server {
 }
 
 struct GrpcService {
-    data_chan: mpsc::Receiver<ServiceData>,
+    data_chan: broadcast::Sender<ServiceData>,
     last_data: Vec<ServiceData>,
+    shutdown: shutdown::Receiver,
 }
 
 impl GrpcService {
-    fn new(chan_receiver: mpsc::Receiver<ServiceData>) -> Self {
+    fn new(shutdown: shutdown::Receiver, chan_receiver: broadcast::Sender<ServiceData>) -> Self {
         let mut last_data = Vec::with_capacity(ServiceType::LEN as usize);
         last_data.resize_with(ServiceType::LEN as usize, || ServiceData::None);
+
         Self {
             data_chan: chan_receiver,
             last_data,
+            shutdown,
         }
     }
 }
@@ -106,39 +111,42 @@ impl api_server::Api for GrpcService {
         let (api_tx, api_rx) =
             mpsc::channel::<Result<api_rpc::DiskListAndWatchResponse, Status>>(4);
 
-        // let handle = GrpcServiceHandle::new(api_tx);
-        // tokio::spawn(async move {handle.serve()});
-
-        /*
-        let disks = api_rpc::DiskListAndWatchResponse {
-            disks: vec![
-                api_rpc::Disk {
-                    name: String::from("helllllo"),
-                    size: 1024,
-                    uuid: String::from("123-123-4123-123"),
-                    mounted: true,
-                    mount_point: String::from("/mnt"),
-                    label: String::from("label1"),
-                },
-                api_rpc::Disk {
-                    name: String::from("world"),
-                    size: 1024,
-                    uuid: String::from("123-123-4123-123"),
-                    mounted: true,
-                    mount_point: String::from("/media"),
-                    label: String::from("label2"),
-                },
-            ],
-        };
-
+        let mut recv = self.data_chan.subscribe();
+        let mut shutdown = self.shutdown.clone();
         tokio::spawn(async move {
-            api_tx.send(Ok(disks.clone())).await.unwrap();
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-            api_tx.send(Ok(disks.clone())).await.unwrap();
-            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-            api_tx.send(Ok(disks.clone())).await.unwrap();
+            let disks = api_rpc::DiskListAndWatchResponse {
+                disks: vec![
+                    api_rpc::Disk {
+                        name: String::from("helllllo"),
+                        size: 1024,
+                        uuid: String::from("123-123-4123-123"),
+                        mounted: true,
+                        mount_point: String::from("/mnt"),
+                        label: String::from("label1"),
+                    },
+                    api_rpc::Disk {
+                        name: String::from("world"),
+                        size: 1024,
+                        uuid: String::from("123-123-4123-123"),
+                        mounted: true,
+                        mount_point: String::from("/media"),
+                        label: String::from("label2"),
+                    },
+                ],
+            };
+
+            loop {
+                tokio::select! {
+                    _ = recv.recv() => {
+                        api_tx.send(Ok(disks.clone())).await.unwrap();
+                    }
+                    _ = shutdown.wait_on() => {
+                        log::info!("Service disk_list_and_watch is shutting down");
+                        break;
+                    }
+                }
+            }
         });
-        */
 
         Ok(Response::new(ReceiverStream::new(api_rx)))
     }

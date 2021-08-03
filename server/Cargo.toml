@@ -15,8 +15,8 @@ path = "src/main.rs"
 
 [dependencies]
 futures = "0.3"
-tokio = { version = "1", features = ["full"] }
-tokio-stream = { version =  "0.1", features = ["net"] }
+tokio = { version = "1.9.0", features = ["full"] }
+tokio-stream = { version =  "0.1.7", features = ["net", "sync"] }
 log = "*"
 simplelog = { version = "^0.10.0", features = ["test"] }
 prost = "0.8"

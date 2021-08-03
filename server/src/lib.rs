@@ -9,7 +9,7 @@ use server::server::Server;
 
 fn setup_logger() {
     TermLogger::init(
-        LevelFilter::Trace,
+        LevelFilter::Debug,
         simplelog::Config::default(),
         TerminalMode::Mixed,
         ColorChoice::Auto,
