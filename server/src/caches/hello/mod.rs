@@ -7,6 +7,8 @@ use crate::public::shutdown;
 use crate::server::event_queue::{Event, EventQ};
 use crate::server::{PreservedServiceData, ServiceData, ServiceType};
 
+const THIS_TYPE: ServiceType = ServiceType::DISK;
+
 struct DataGenerator {
     data: HelloCacheData,
     event_queue: EventQ,
@@ -25,7 +27,7 @@ impl DataGenerator {
                     log::info!("Hello Cache - New data is generated");
                     let mut d = self.data.data.lock().unwrap();
                     *d += 1;
-                    self.event_queue.push(Event{ service_type: ServiceType::_PRESERVED });
+                    self.event_queue.push(Event{ service_type: THIS_TYPE });
                 }
                 _ = shutdown.wait_on() => {
                     log::warn!("Hello Cache - Data generator is shutting down");
@@ -79,11 +81,11 @@ impl HelloCache {
         let cache = HelloCache {
             data: data.clone(),
             event_queue,
-            service_type: ServiceType::_PRESERVED,
+            service_type: THIS_TYPE,
         };
 
         let cache_handler = HelloCacheHandler {
-            service_type: ServiceType::_PRESERVED,
+            service_type: THIS_TYPE,
             data,
         };
 

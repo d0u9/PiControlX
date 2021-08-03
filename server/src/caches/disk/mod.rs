@@ -6,6 +6,8 @@ use crate::public::shutdown;
 use crate::server::event_queue::{Event, EventQ};
 use crate::server::{DiskServiceData, ServiceData, ServiceType};
 
+const THIS_TYPE: ServiceType = ServiceType::_PRESERVED;
+
 struct DataGenerator {
     data: DiskCacheData,
     event_queue: EventQ,
@@ -69,11 +71,11 @@ impl DiskCache {
         let cache = Self {
             data: data.clone(),
             event_queue,
-            service_type: ServiceType::DISK,
+            service_type: THIS_TYPE,
         };
 
         let cache_handler = DiskCacheHandler {
-            service_type: ServiceType::DISK,
+            service_type: THIS_TYPE,
             data,
         };
 

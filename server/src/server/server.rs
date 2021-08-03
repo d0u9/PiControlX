@@ -7,11 +7,9 @@ use tokio::sync::{broadcast, oneshot};
 use tonic::transport::Server as TonicServer;
 use tonic::{Request, Response, Status};
 
-pub mod api_rpc {
-    tonic::include_proto!("api");
-}
-use api_rpc::api_server;
-
+use super::api_rpc;
+use super::api_rpc::api_server;
+use super::converter;
 use super::event_queue::EventQ;
 use super::fetcher::Fetcher;
 use super::{ServiceData, ServiceType};
@@ -73,37 +71,27 @@ impl Server {
 
         let mut shutdown = self.shutdown.clone();
         tokio::spawn(async move {
-            let disks = api_rpc::DiskListAndWatchResponse {
-                disks: vec![
-                    api_rpc::Disk {
-                        name: String::from("helllllo"),
-                        size: 1024,
-                        uuid: String::from("123-123-4123-123"),
-                        mounted: true,
-                        mount_point: String::from("/mnt"),
-                        label: String::from("label1"),
-                    },
-                    api_rpc::Disk {
-                        name: String::from("world"),
-                        size: 1024,
-                        uuid: String::from("123-123-4123-123"),
-                        mounted: true,
-                        mount_point: String::from("/media"),
-                        label: String::from("label2"),
-                    },
-                ],
-            };
-
             loop {
                 tokio::select! {
                     _ = shutdown.wait_on() => {
                         log::warn!("Server is shutting down...");
                         break;
                     }
-                    _ = chan_rx.recv() => {
-                        let sender = &data_chans[ServiceType::DISK as usize];
-                        if let Err(_) = sender.send(GrpcData::Disk(disks.clone())) {
-                            log::warn!("Server dispatcher cannot send GRPC data")
+                    v = chan_rx.recv() => {
+                        if let Err(e) = v {
+                            log::error!("Server dispatcher read channel failed: {:?}", e);
+                            continue;
+                        }
+                        match v {
+                            Err(e) => log::error!("Server dispatcher read channel failed: {:?}", e),
+                            Ok(data) => {
+                                if let Some(disks) = converter::data_to_disk_list_and_watch_response(&data) {
+                                    let sender = &data_chans[ServiceType::DISK as usize];
+                                    if let Err(_) = sender.send(GrpcData::Disk(disks.clone())) {
+                                        log::warn!("Server dispatcher cannot send GRPC data")
+                                    }
+                                }
+                            }
                         }
                     }
                 }
