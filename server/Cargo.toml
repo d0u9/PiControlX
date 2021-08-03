@@ -21,6 +21,7 @@ log = "*"
 simplelog = { version = "^0.10.0", features = ["test"] }
 prost = "0.8"
 tonic = "0.5"
+async-stream = "0.3"
 
 [build-dependencies]
 tonic-build = "0.5"

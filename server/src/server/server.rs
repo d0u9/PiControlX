@@ -1,8 +1,9 @@
 use futures::FutureExt;
+use futures::Stream;
 use std::net::SocketAddr;
+use std::pin::Pin;
 
-use tokio::sync::{mpsc, oneshot, broadcast};
-use tokio_stream::wrappers::ReceiverStream;
+use tokio::sync::{broadcast, oneshot};
 use tonic::transport::Server as TonicServer;
 use tonic::{Request, Response, Status};
 
@@ -52,8 +53,14 @@ impl Server {
     }
 
     pub async fn serve(&mut self) {
-        let (chan_tx, _) = broadcast::channel(2);
-        let service = GrpcService::new(self.shutdown.clone(), chan_tx.clone());
+        let (chan_tx, mut chan_rx) = broadcast::channel(2);
+        let mut data_chans = Vec::with_capacity(ServiceType::LEN as usize);
+        data_chans.resize_with(ServiceType::LEN as usize, || {
+            let (s, _) = broadcast::channel(2);
+            s
+        });
+
+        let service = GrpcService::new(self.shutdown.clone(), data_chans.clone());
         let grpc_server = TonicServer::builder().add_service(api_server::ApiServer::new(service));
         let (tx, rx) = oneshot::channel::<()>();
         let addr = self.addr.clone();
@@ -64,54 +71,6 @@ impl Server {
                 .unwrap();
         });
 
-        self.fetcher.wait_event(chan_tx).await;
-        log::warn!("GRPC server is shutting down...");
-        tx.send(()).unwrap(); // shutting down server
-        handler.await.unwrap();
-    }
-
-    pub fn add_cache(
-        &mut self,
-        service_type: ServiceType,
-        cache: Box<dyn CacheHandler + Send + Sync>,
-    ) {
-        self.fetcher.add_cache(service_type, cache);
-    }
-}
-
-struct GrpcService {
-    data_chan: broadcast::Sender<ServiceData>,
-    last_data: Vec<ServiceData>,
-    shutdown: shutdown::Receiver,
-}
-
-impl GrpcService {
-    fn new(shutdown: shutdown::Receiver, chan_receiver: broadcast::Sender<ServiceData>) -> Self {
-        let mut last_data = Vec::with_capacity(ServiceType::LEN as usize);
-        last_data.resize_with(ServiceType::LEN as usize, || ServiceData::None);
-
-        Self {
-            data_chan: chan_receiver,
-            last_data,
-            shutdown,
-        }
-    }
-}
-
-#[tonic::async_trait]
-impl api_server::Api for GrpcService {
-    type DiskListAndWatchStream = ReceiverStream<Result<api_rpc::DiskListAndWatchResponse, Status>>;
-
-    async fn disk_list_and_watch(
-        &self,
-        request: Request<api_rpc::DiskListAndWatchRequest>,
-    ) -> Result<Response<Self::DiskListAndWatchStream>, Status> {
-        log::info!("Got a request from {:?}", request.remote_addr());
-
-        let (api_tx, api_rx) =
-            mpsc::channel::<Result<api_rpc::DiskListAndWatchResponse, Status>>(4);
-
-        let mut recv = self.data_chan.subscribe();
         let mut shutdown = self.shutdown.clone();
         tokio::spawn(async move {
             let disks = api_rpc::DiskListAndWatchResponse {
@@ -137,17 +96,98 @@ impl api_server::Api for GrpcService {
 
             loop {
                 tokio::select! {
-                    _ = recv.recv() => {
-                        api_tx.send(Ok(disks.clone())).await.unwrap();
-                    }
                     _ = shutdown.wait_on() => {
-                        log::info!("Service disk_list_and_watch is shutting down");
+                        println!("Server exiting");
                         break;
+                    }
+                    v = chan_rx.recv() => {
+                        dbg!(v);
+                        let sender = &data_chans[ServiceType::DISK as usize];
+                        match sender.send(GrpcData::Disk(disks.clone())) {
+                            Err(e) => log::error!("Cannot send grpc data: {:?}", e),
+                            _ => (),
+                        }
                     }
                 }
             }
         });
 
-        Ok(Response::new(ReceiverStream::new(api_rx)))
+        self.fetcher.wait_event(chan_tx).await;
+        log::warn!("GRPC server is shutting down...");
+        tx.send(()).unwrap(); // shutting down server
+        handler.await.unwrap();
+    }
+
+    pub fn add_cache(
+        &mut self,
+        service_type: ServiceType,
+        cache: Box<dyn CacheHandler + Send + Sync>,
+    ) {
+        self.fetcher.add_cache(service_type, cache);
+    }
+}
+
+#[derive(Clone, Debug)]
+enum GrpcData {
+    None,
+    Disk(api_rpc::DiskListAndWatchResponse),
+}
+
+struct GrpcService {
+    shutdown: shutdown::Receiver,
+    data_chans: Vec<broadcast::Sender<GrpcData>>,
+}
+
+impl GrpcService {
+    fn new(shutdown: shutdown::Receiver, data_chans: Vec<broadcast::Sender<GrpcData>>) -> Self {
+        let mut last_data = Vec::with_capacity(ServiceType::LEN as usize);
+        last_data.resize_with(ServiceType::LEN as usize, || ServiceData::None);
+
+        Self {
+            shutdown,
+            data_chans,
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl api_server::Api for GrpcService {
+    type DiskListAndWatchStream = Pin<
+        Box<
+            dyn Stream<Item = Result<api_rpc::DiskListAndWatchResponse, Status>>
+                + Send
+                + Sync
+                + 'static,
+        >,
+    >;
+
+    async fn disk_list_and_watch(
+        &self,
+        request: Request<api_rpc::DiskListAndWatchRequest>,
+    ) -> Result<Response<Self::DiskListAndWatchStream>, Status> {
+        log::info!("Got a request from {:?}", request.remote_addr());
+
+        const THIS_TYPE: ServiceType = ServiceType::DISK;
+        let mut this_chan = self.data_chans[THIS_TYPE as usize].subscribe();
+        let mut shutdown = self.shutdown.clone();
+
+        let output = async_stream::try_stream! {
+            loop {
+                tokio::select! {
+                    Ok(v) = this_chan.recv() => {
+                        if let GrpcData::Disk(disks) = v {
+                                yield disks;
+                        }
+                    }
+                    _ = shutdown.wait_on() => {
+                        break;
+                    }
+                }
+            }
+        };
+
+        Ok(Response::new(
+            Box::pin(output) as Self::DiskListAndWatchStream
+        ))
     }
 }
