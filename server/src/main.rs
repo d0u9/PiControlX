@@ -9,5 +9,4 @@ async fn tokio_main() {
 fn main() {
     let rt = Runtime::new().unwrap();
     rt.block_on(tokio_main());
-    println!("Hello, world!");
 }

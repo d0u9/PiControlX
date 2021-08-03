@@ -64,21 +64,16 @@ impl Fetcher {
             tokio::select! {
                 _ = self.notifier.inner.notified(), if !notified => {
                     notified = true;
-                    log::info!("Fetcher is notified, new event incoming...");
+                    log::debug!("Fetcher is notified, new event incoming...");
                 }
                 v = self.handle_events(data_chan.clone()), if notified => {
                     notified = false;
-                    match v {
-                        Err(e) => {
-                            log::error!("Send error: {:?}", e);
-                        }
-                        _ => {
-                            log::info!("Data processed");
-                        }
+                    if let Err(e) = v {
+                        log::error!("Fetcher cannot send data to server, error: {:?}", e);
                     }
                 }
                 _ = shutdown.wait_on() => {
-                    println!("Fetcher received shutting down signal");
+                    log::warn!("Fetcher received shutting down signal");
                     break;
                 }
             }
@@ -94,24 +89,23 @@ impl Fetcher {
         self.caches[idx] = Some(cache);
     }
 
-    pub(super) fn fetch_last(&self, service_type: ServiceType) -> ServiceData {
-        self.last_data[service_type as usize].clone()
-    }
-
     async fn handle_single_event(
         &self,
         service_type: ServiceType,
         data_chan: &broadcast::Sender<ServiceData>,
     ) -> Result<(), SendError<ServiceData>> {
         let cache = self.caches[service_type as usize].as_ref();
-        match cache {
-            Some(c) => {
-                let data = c.fetch();
-                log::info!("Handle data from {:?} = {:?}", c.get_type(), &data);
-                data_chan.send(data)?;
-            }
-            _ => return Ok(()),
+
+        if let Some(c) = cache {
+            let data = c.fetch();
+            log::debug!(
+                "Fetcher handles data in event queue from {:?} = {:?}",
+                c.get_type(),
+                &data
+            );
+            data_chan.send(data)?;
         }
+
         Ok(())
     }
 
@@ -125,10 +119,11 @@ impl Fetcher {
 
         let q = self.event_queue.as_ref().unwrap();
         let events = q.drain();
+
         for e in events.iter() {
-            log::trace!("Processing event: {:?}", e);
             self.handle_single_event(e.service_type, &data_chan).await?;
         }
+
         Ok(())
     }
 }

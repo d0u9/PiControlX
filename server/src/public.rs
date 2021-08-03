@@ -22,7 +22,7 @@ pub(crate) mod shutdown {
     impl Sender {
         pub(crate) async fn shutdown(&self) {
             self.inner.send(SENDVAL).unwrap();
-            log::info!("Send shutdown signal, waiting close...");
+            log::debug!("Send shutdown signal, waiting close...");
             self.inner.closed().await;
         }
     }

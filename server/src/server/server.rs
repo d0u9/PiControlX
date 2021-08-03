@@ -97,15 +97,13 @@ impl Server {
             loop {
                 tokio::select! {
                     _ = shutdown.wait_on() => {
-                        println!("Server exiting");
+                        log::warn!("Server is shutting down...");
                         break;
                     }
-                    v = chan_rx.recv() => {
-                        dbg!(v);
+                    _ = chan_rx.recv() => {
                         let sender = &data_chans[ServiceType::DISK as usize];
-                        match sender.send(GrpcData::Disk(disks.clone())) {
-                            Err(e) => log::error!("Cannot send grpc data: {:?}", e),
-                            _ => (),
+                        if let Err(_) = sender.send(GrpcData::Disk(disks.clone())) {
+                            log::warn!("Server dispatcher cannot send GRPC data")
                         }
                     }
                 }
@@ -165,7 +163,10 @@ impl api_server::Api for GrpcService {
         &self,
         request: Request<api_rpc::DiskListAndWatchRequest>,
     ) -> Result<Response<Self::DiskListAndWatchStream>, Status> {
-        log::info!("Got a request from {:?}", request.remote_addr());
+        log::debug!(
+            "GRPC service got a new request from {:?}",
+            request.remote_addr()
+        );
 
         const THIS_TYPE: ServiceType = ServiceType::DISK;
         let mut this_chan = self.data_chans[THIS_TYPE as usize].subscribe();
