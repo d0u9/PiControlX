@@ -89,6 +89,15 @@ impl Fetcher {
         self.caches[idx] = Some(cache);
     }
 
+    pub(super) fn add_caches(
+        &mut self,
+        caches: Vec<(ServiceType, Box<dyn CacheHandler + Send + Sync>)>,
+    ) {
+        for v in caches.into_iter() {
+            self.add_cache(v.0, v.1);
+        }
+    }
+
     async fn handle_single_event(
         &self,
         service_type: ServiceType,

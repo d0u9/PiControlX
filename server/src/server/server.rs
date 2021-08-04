@@ -104,12 +104,8 @@ impl Server {
         handler.await.unwrap();
     }
 
-    pub fn add_cache(
-        &mut self,
-        service_type: ServiceType,
-        cache: Box<dyn CacheHandler + Send + Sync>,
-    ) {
-        self.fetcher.add_cache(service_type, cache);
+    pub fn add_caches(&mut self, caches: Vec<(ServiceType, Box<dyn CacheHandler + Send + Sync>)>) {
+        self.fetcher.add_caches(caches);
     }
 }
 
