@@ -31,4 +31,3 @@ impl Receiver {
         self.inner.changed().await.unwrap();
     }
 }
-

@@ -1,4 +1,3 @@
-pub(crate) mod event_queue;
 pub(crate) mod fetcher;
 pub(crate) mod server;
 

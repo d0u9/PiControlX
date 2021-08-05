@@ -3,8 +3,8 @@ use std::sync::{Arc, Mutex};
 use tokio::time::{sleep, Duration};
 
 use super::{Cache, CacheHandler};
-use crate::public::shutdown;
 use crate::public::event_queue::{Event, EventNotifier};
+use crate::public::shutdown;
 use crate::public::{PreservedServiceData, ServiceData, ServiceType};
 
 const THIS_TYPE: ServiceType = ServiceType::DISK;
@@ -16,14 +16,17 @@ struct DataGenerator {
 
 impl DataGenerator {
     fn new(data: HelloCacheData, event_notifier: EventNotifier) -> Self {
-        DataGenerator { event_notifier, data }
+        DataGenerator {
+            event_notifier,
+            data,
+        }
     }
 
     async fn run(&mut self, mut shutdown: shutdown::Receiver) {
         log::info!("Hello Cache - Data generator is running");
         loop {
             tokio::select! {
-                _ = sleep(Duration::from_millis(2000)) => {
+                _ = sleep(Duration::from_millis(5000)) => {
                     log::info!("Hello Cache - New data is generated");
                     let mut d = self.data.data.lock().unwrap();
                     *d += 1;

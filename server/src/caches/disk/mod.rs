@@ -2,8 +2,8 @@ use log;
 use std::sync::{Arc, Mutex};
 
 use super::{Cache, CacheHandler};
-use crate::public::shutdown;
 use crate::public::event_queue::EventNotifier;
+use crate::public::shutdown;
 use crate::public::{DiskServiceData, ServiceData, ServiceType};
 
 const THIS_TYPE: ServiceType = ServiceType::_PRESERVED;
@@ -15,7 +15,10 @@ struct DataGenerator {
 
 impl DataGenerator {
     fn new(data: DiskCacheData, event_notifier: EventNotifier) -> Self {
-        Self { event_notifier, data }
+        Self {
+            event_notifier,
+            data,
+        }
     }
 
     async fn run(&mut self, mut shutdown: shutdown::Receiver) {

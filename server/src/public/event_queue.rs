@@ -1,8 +1,8 @@
 use log;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
-use tokio::sync::RwLock;
 use tokio::sync::mpsc;
+use tokio::sync::RwLock;
 
 use super::ServiceType;
 
@@ -19,10 +19,7 @@ pub(crate) struct EventNotifier {
 
 impl EventNotifier {
     fn new(sender: mpsc::Sender<()>, q: Arc<Mutex<VecDeque<Event>>>) -> Self {
-        Self {
-            sender,
-            q,
-        }
+        Self { sender, q }
     }
 
     pub(crate) fn push(&self, data: Event) {

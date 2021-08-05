@@ -5,8 +5,8 @@ use tokio::signal;
 mod caches;
 mod public;
 mod server;
-use server::server::Server;
 use crate::public::event_queue::EventQ;
+use server::server::Server;
 
 fn setup_logger() {
     TermLogger::init(

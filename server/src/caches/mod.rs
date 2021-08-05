@@ -1,5 +1,5 @@
-use crate::public::shutdown;
 use crate::public::event_queue::EventNotifier;
+use crate::public::shutdown;
 use crate::public::{ServiceData, ServiceType};
 
 mod hello;

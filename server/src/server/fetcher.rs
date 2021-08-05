@@ -2,16 +2,15 @@ use log;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::SendError;
 
-use crate::public::event_queue::EventQ;
-use crate::public::{ServiceData, ServiceType};
 use crate::caches::CacheHandler;
+use crate::public::event_queue::EventQ;
 use crate::public::shutdown;
+use crate::public::{ServiceData, ServiceType};
 
 pub(super) struct Fetcher {
     shutdown: shutdown::Receiver,
     caches: Vec<Option<Box<dyn CacheHandler + Send + Sync>>>,
     event_queue: Option<EventQ>,
-    last_data: Vec<ServiceData>,
 }
 
 impl Fetcher {
@@ -19,14 +18,10 @@ impl Fetcher {
         let mut caches = Vec::with_capacity(ServiceType::LEN as usize);
         caches.resize_with(ServiceType::LEN as usize, || None);
 
-        let mut last_data = Vec::with_capacity(ServiceType::LEN as usize);
-        last_data.resize_with(ServiceType::LEN as usize, || ServiceData::None);
-
         let fetcher = Fetcher {
             shutdown,
             caches,
             event_queue: None,
-            last_data,
         };
         fetcher
     }
@@ -38,7 +33,7 @@ impl Fetcher {
     pub(super) async fn wait_event(&mut self, data_chan: broadcast::Sender<ServiceData>) {
         if self.event_queue.is_none() {
             log::error!("Fetcher cannot wait event, event_queue is not initialized");
-            return
+            return;
         }
 
         let mut notified = false;
@@ -96,7 +91,7 @@ impl Fetcher {
                 c.get_type(),
                 &data
             );
-            data_chan.send(data)?;
+            data_chan.send(data.clone())?;
         }
 
         Ok(())
@@ -121,4 +116,5 @@ impl Fetcher {
 
         Ok(())
     }
+
 }
