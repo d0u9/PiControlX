@@ -3,6 +3,7 @@ use futures::Stream;
 use std::net::SocketAddr;
 use std::pin::Pin;
 
+use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{broadcast, oneshot};
 use tonic::transport::Server as TonicServer;
 use tonic::{Request, Response, Status};
@@ -78,21 +79,7 @@ impl Server {
                         break;
                     }
                     v = chan_rx.recv() => {
-                        if let Err(e) = v {
-                            log::error!("Server dispatcher read channel failed: {:?}", e);
-                            continue;
-                        }
-                        match v {
-                            Err(e) => log::error!("Server dispatcher read channel failed: {:?}", e),
-                            Ok(data) => {
-                                if let Some(disks) = converter::data_to_disk_list_and_watch_response(&data) {
-                                    let sender = &data_chans[ServiceType::DISK as usize];
-                                    if let Err(_) = sender.send(GrpcData::Disk(disks.clone())) {
-                                        log::warn!("Server dispatcher cannot send GRPC data")
-                                    }
-                                }
-                            }
-                        }
+                        Self::handle_new_data(&v, &data_chans);
                     }
                 }
             }
@@ -102,6 +89,23 @@ impl Server {
         log::warn!("GRPC server is shutting down...");
         tx.send(()).unwrap(); // shutting down server
         handler.await.unwrap();
+    }
+
+    fn handle_new_data(
+        data: &Result<ServiceData, RecvError>,
+        data_chans: &Vec<broadcast::Sender<GrpcData>>,
+    ) {
+        match data {
+            Err(e) => log::error!("Server dispatcher read channel failed: {:?}", e),
+            Ok(v) => {
+                if let Some(disks) = converter::data_to_disk_list_and_watch_response(&v) {
+                    let sender = &data_chans[ServiceType::DISK as usize];
+                    if let Err(_) = sender.send(GrpcData::Disk(disks.clone())) {
+                        log::warn!("Server dispatcher cannot send GRPC data")
+                    }
+                }
+            }
+        }
     }
 
     pub fn add_caches(&mut self, caches: Vec<(ServiceType, Box<dyn CacheHandler + Send + Sync>)>) {
