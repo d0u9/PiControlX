@@ -1,6 +1,6 @@
 use crate::public::shutdown;
-use crate::server::event_queue::EventQ;
-use crate::server::{ServiceData, ServiceType};
+use crate::public::event_queue::EventNotifier;
+use crate::public::{ServiceData, ServiceType};
 
 mod hello;
 use hello::HelloCache;
@@ -42,12 +42,12 @@ impl CacheManager {
 
     pub(crate) fn create_caches(
         &mut self,
-        event_q: EventQ,
+        event_notifier: EventNotifier,
     ) -> Vec<(ServiceType, Box<dyn CacheHandler + Send + Sync>)> {
         let mut ret = Vec::new();
 
         // Add hello cache
-        let (cache, handler) = HelloCache::new(event_q.clone());
+        let (cache, handler) = HelloCache::new(event_notifier.clone());
         ret.push((
             handler.get_type(),
             Box::new(handler) as Box<dyn CacheHandler + Send + Sync>,
@@ -55,7 +55,7 @@ impl CacheManager {
         self.add_cache(cache.get_type(), Box::new(cache));
 
         // Add disk cache
-        let (cache, handler) = DiskCache::new(event_q.clone());
+        let (cache, handler) = DiskCache::new(event_notifier.clone());
         ret.push((
             handler.get_type(),
             Box::new(handler) as Box<dyn CacheHandler + Send + Sync>,

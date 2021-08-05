@@ -6,6 +6,7 @@ mod caches;
 mod public;
 mod server;
 use server::server::Server;
+use crate::public::event_queue::EventQ;
 
 fn setup_logger() {
     TermLogger::init(
@@ -25,15 +26,18 @@ pub async fn lib_main() {
     setup_logger();
 
     log::warn!("async main start...");
-    let addr = "[::1]:50051".parse().unwrap();
-    let mut cache_manager = caches::CacheManager::new();
 
+    let event_q = EventQ::new();
+
+    let mut cache_manager = caches::CacheManager::new();
+    let cache_handlers = cache_manager.create_caches(event_q.get_notifier());
+
+    let addr = "[::1]:50051".parse().unwrap();
     let (mut server, server_handler) = Server::new(addr);
-    let cache_handlers = cache_manager.create_caches(server.event_q.clone());
     server.add_caches(cache_handlers);
 
     let handler1 = tokio::spawn(async move {
-        server.serve().await;
+        server.serve(event_q).await;
     });
 
     let cache_manager_handler = cache_manager.run();

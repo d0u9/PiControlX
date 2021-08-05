@@ -3,19 +3,19 @@ use std::sync::{Arc, Mutex};
 
 use super::{Cache, CacheHandler};
 use crate::public::shutdown;
-use crate::server::event_queue::{Event, EventQ};
-use crate::server::{DiskServiceData, ServiceData, ServiceType};
+use crate::public::event_queue::EventNotifier;
+use crate::public::{DiskServiceData, ServiceData, ServiceType};
 
 const THIS_TYPE: ServiceType = ServiceType::_PRESERVED;
 
 struct DataGenerator {
     data: DiskCacheData,
-    event_queue: EventQ,
+    event_notifier: EventNotifier,
 }
 
 impl DataGenerator {
-    fn new(data: DiskCacheData, event_queue: EventQ) -> Self {
-        Self { event_queue, data }
+    fn new(data: DiskCacheData, event_notifier: EventNotifier) -> Self {
+        Self { event_notifier, data }
     }
 
     async fn run(&mut self, mut shutdown: shutdown::Receiver) {
@@ -60,17 +60,17 @@ impl CacheHandler for DiskCacheHandler {
 }
 
 pub(crate) struct DiskCache {
-    event_queue: EventQ,
+    event_notifier: EventNotifier,
     service_type: ServiceType,
     data: DiskCacheData,
 }
 
 impl DiskCache {
-    pub(super) fn new(event_queue: EventQ) -> (Self, DiskCacheHandler) {
+    pub(super) fn new(event_notifier: EventNotifier) -> (Self, DiskCacheHandler) {
         let data = DiskCacheData::new();
         let cache = Self {
             data: data.clone(),
-            event_queue,
+            event_notifier,
             service_type: THIS_TYPE,
         };
 
@@ -86,7 +86,7 @@ impl DiskCache {
 impl Cache for DiskCache {
     fn run(&self, shutdown: shutdown::Receiver) {
         log::info!("DiskCache start running...");
-        let mut generator = DataGenerator::new(self.data.clone(), self.event_queue.clone());
+        let mut generator = DataGenerator::new(self.data.clone(), self.event_notifier.clone());
         tokio::spawn(async move {
             generator.run(shutdown).await;
         });

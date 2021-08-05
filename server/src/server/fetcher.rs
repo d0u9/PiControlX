@@ -1,33 +1,13 @@
 use log;
-use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::SendError;
-use tokio::sync::Notify;
 
-use super::event_queue::EventQ;
-use super::{ServiceData, ServiceType};
+use crate::public::event_queue::EventQ;
+use crate::public::{ServiceData, ServiceType};
 use crate::caches::CacheHandler;
 use crate::public::shutdown;
 
-#[derive(Clone)]
-pub(crate) struct Notifier {
-    inner: Arc<Notify>,
-}
-
-impl Notifier {
-    pub(crate) fn new() -> Self {
-        Notifier {
-            inner: Arc::new(Notify::new()),
-        }
-    }
-
-    pub(crate) fn notify(&self) {
-        self.inner.notify_one();
-    }
-}
-
 pub(super) struct Fetcher {
-    notifier: Notifier,
     shutdown: shutdown::Receiver,
     caches: Vec<Option<Box<dyn CacheHandler + Send + Sync>>>,
     event_queue: Option<EventQ>,
@@ -35,8 +15,7 @@ pub(super) struct Fetcher {
 }
 
 impl Fetcher {
-    pub(super) fn new(shutdown: shutdown::Receiver) -> (Self, Notifier) {
-        let notifier = Notifier::new();
+    pub(super) fn new(shutdown: shutdown::Receiver) -> Self {
         let mut caches = Vec::with_capacity(ServiceType::LEN as usize);
         caches.resize_with(ServiceType::LEN as usize, || None);
 
@@ -44,13 +23,12 @@ impl Fetcher {
         last_data.resize_with(ServiceType::LEN as usize, || ServiceData::None);
 
         let fetcher = Fetcher {
-            notifier: notifier.clone(),
             shutdown,
             caches,
             event_queue: None,
             last_data,
         };
-        (fetcher, notifier)
+        fetcher
     }
 
     pub(super) fn add_event_queue(&mut self, q: EventQ) {
@@ -58,11 +36,17 @@ impl Fetcher {
     }
 
     pub(super) async fn wait_event(&mut self, data_chan: broadcast::Sender<ServiceData>) {
+        if self.event_queue.is_none() {
+            log::error!("Fetcher cannot wait event, event_queue is not initialized");
+            return
+        }
+
         let mut notified = false;
         let mut shutdown = self.shutdown.clone();
+        let event_queue = self.event_queue.as_ref().unwrap();
         loop {
             tokio::select! {
-                _ = self.notifier.inner.notified(), if !notified => {
+                _ = event_queue.notified(), if !notified => {
                     notified = true;
                     log::debug!("Fetcher is notified, new event incoming...");
                 }
@@ -122,6 +106,8 @@ impl Fetcher {
         &self,
         data_chan: broadcast::Sender<ServiceData>,
     ) -> Result<(), SendError<ServiceData>> {
+        log::debug!("Fetcher starts handle events");
+
         if self.event_queue.is_none() {
             log::error!("Fetcher cannot handle event, no event queue is registered");
         }

@@ -1,5 +1,5 @@
 use super::api_rpc::{Disk, DiskListAndWatchResponse};
-use super::ServiceData;
+use crate::public::ServiceData;
 
 pub(super) fn data_to_disk_list_and_watch_response(
     data: &ServiceData,

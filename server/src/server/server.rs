@@ -11,9 +11,9 @@ use tonic::{Request, Response, Status};
 use super::api_rpc;
 use super::api_rpc::api_server;
 use super::converter;
-use super::event_queue::EventQ;
+use crate::public::event_queue::EventQ;
 use super::fetcher::Fetcher;
-use super::{ServiceData, ServiceType};
+use crate::public::{ServiceData, ServiceType};
 use crate::caches::CacheHandler;
 use crate::public::shutdown;
 
@@ -31,27 +31,23 @@ pub(crate) struct Server {
     shutdown: shutdown::Receiver,
     addr: SocketAddr,
     fetcher: Fetcher,
-    pub(crate) event_q: EventQ,
 }
 
 impl Server {
     pub fn new(addr: SocketAddr) -> (Self, ServerHandler) {
         let (s, r) = shutdown::new();
-        let (mut fetcher, notifier) = Fetcher::new(r.clone());
-        let event_queue = EventQ::new(notifier);
-        fetcher.add_event_queue(event_queue.clone());
+        let fetcher = Fetcher::new(r.clone());
         (
             Server {
                 shutdown: r,
                 addr,
                 fetcher,
-                event_q: event_queue,
             },
             ServerHandler { shutdown: s },
         )
     }
 
-    pub async fn serve(&mut self) {
+    pub async fn serve(&mut self, event_q: EventQ) {
         let (chan_tx, mut chan_rx) = broadcast::channel(2);
         let mut data_chans = Vec::with_capacity(ServiceType::LEN as usize);
         data_chans.resize_with(ServiceType::LEN as usize, || {
@@ -62,6 +58,9 @@ impl Server {
         let service = GrpcService::new(self.shutdown.clone(), data_chans.clone());
         let grpc_server = TonicServer::builder().add_service(api_server::ApiServer::new(service));
         let (tx, rx) = oneshot::channel::<()>();
+
+        self.fetcher.add_event_queue(event_q);
+
         let addr = self.addr.clone();
         let handler = tokio::spawn(async move {
             grpc_server

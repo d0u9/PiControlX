@@ -4,19 +4,19 @@ use tokio::time::{sleep, Duration};
 
 use super::{Cache, CacheHandler};
 use crate::public::shutdown;
-use crate::server::event_queue::{Event, EventQ};
-use crate::server::{PreservedServiceData, ServiceData, ServiceType};
+use crate::public::event_queue::{Event, EventNotifier};
+use crate::public::{PreservedServiceData, ServiceData, ServiceType};
 
 const THIS_TYPE: ServiceType = ServiceType::DISK;
 
 struct DataGenerator {
     data: HelloCacheData,
-    event_queue: EventQ,
+    event_notifier: EventNotifier,
 }
 
 impl DataGenerator {
-    fn new(data: HelloCacheData, event_queue: EventQ) -> Self {
-        DataGenerator { event_queue, data }
+    fn new(data: HelloCacheData, event_notifier: EventNotifier) -> Self {
+        DataGenerator { event_notifier, data }
     }
 
     async fn run(&mut self, mut shutdown: shutdown::Receiver) {
@@ -27,7 +27,7 @@ impl DataGenerator {
                     log::info!("Hello Cache - New data is generated");
                     let mut d = self.data.data.lock().unwrap();
                     *d += 1;
-                    self.event_queue.push(Event{ service_type: THIS_TYPE });
+                    self.event_notifier.push(Event{ service_type: THIS_TYPE });
                 }
                 _ = shutdown.wait_on() => {
                     log::warn!("Hello Cache - Data generator is shutting down");
@@ -70,17 +70,17 @@ impl CacheHandler for HelloCacheHandler {
 impl HelloCacheHandler {}
 
 pub(super) struct HelloCache {
-    event_queue: EventQ,
+    event_notifier: EventNotifier,
     service_type: ServiceType,
     data: HelloCacheData,
 }
 
 impl HelloCache {
-    pub(super) fn new(event_queue: EventQ) -> (Self, HelloCacheHandler) {
+    pub(super) fn new(event_notifier: EventNotifier) -> (Self, HelloCacheHandler) {
         let data = HelloCacheData::new();
         let cache = HelloCache {
             data: data.clone(),
-            event_queue,
+            event_notifier,
             service_type: THIS_TYPE,
         };
 
@@ -96,7 +96,7 @@ impl HelloCache {
 impl Cache for HelloCache {
     fn run(&self, shutdown: shutdown::Receiver) {
         log::info!("HelloCache is running");
-        let mut generator = DataGenerator::new(self.data.clone(), self.event_queue.clone());
+        let mut generator = DataGenerator::new(self.data.clone(), self.event_notifier.clone());
         tokio::spawn(async move {
             generator.run(shutdown).await;
         });

@@ -1,35 +1,27 @@
-pub(crate) mod shutdown {
-    use tokio::sync::watch;
+pub(crate) mod event_queue;
+pub(crate) mod shutdown;
 
-    type ShutdownType = u8;
-    const INITVAL: ShutdownType = 10;
-    const SENDVAL: ShutdownType = 1;
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum ServiceType {
+    _PRESERVED = 0,
+    DISK,
+    LEN,
+}
 
-    #[derive(Clone)]
-    pub(crate) struct Receiver {
-        inner: watch::Receiver<ShutdownType>,
-    }
+#[derive(Debug, Clone)]
+pub(crate) struct PreservedServiceData {
+    pub(crate) data: u32,
+}
 
-    pub(crate) struct Sender {
-        inner: watch::Sender<ShutdownType>,
-    }
+#[derive(Debug, Clone)]
+pub(crate) struct DiskServiceData {
+    pub(crate) data: u32,
+}
 
-    pub(crate) fn new() -> (Sender, Receiver) {
-        let (s, r) = watch::channel(INITVAL);
-        (Sender { inner: s }, Receiver { inner: r })
-    }
-
-    impl Sender {
-        pub(crate) async fn shutdown(&self) {
-            self.inner.send(SENDVAL).unwrap();
-            log::debug!("Send shutdown signal, waiting close...");
-            self.inner.closed().await;
-        }
-    }
-
-    impl Receiver {
-        pub(crate) async fn wait_on(&mut self) {
-            self.inner.changed().await.unwrap();
-        }
-    }
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub(crate) enum ServiceData {
+    None,
+    Preserved(PreservedServiceData),
+    Disk(DiskServiceData),
 }
