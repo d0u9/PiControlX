@@ -3,9 +3,9 @@ use crate::public::shutdown;
 use crate::public::{ServiceData, ServiceType};
 
 mod hello;
-use hello::HelloCache;
+use hello::{HelloCache, HelloCacheHandler};
 mod disk;
-use disk::DiskCache;
+use disk::{DiskCache, DiskCacheHandler};
 
 pub(crate) trait Cache {
     fn run(&self, shutdown: shutdown::Receiver);
@@ -20,6 +20,12 @@ pub(crate) trait CacheHandler {
 
 pub(crate) struct CacheManagerHandler {
     shutdown: shutdown::Sender,
+}
+
+#[derive(Debug)]
+pub(crate) enum Handler {
+    Hello(HelloCacheHandler),
+    Disk(DiskCacheHandler),
 }
 
 impl CacheManagerHandler {
@@ -43,23 +49,17 @@ impl CacheManager {
     pub(crate) fn create_caches(
         &mut self,
         event_notifier: EventNotifier,
-    ) -> Vec<(ServiceType, Box<dyn CacheHandler + Send + Sync>)> {
+    ) -> Vec<(ServiceType, Handler)> {
         let mut ret = Vec::new();
 
         // Add hello cache
         let (cache, handler) = HelloCache::new(event_notifier.clone());
-        ret.push((
-            handler.get_type(),
-            Box::new(handler) as Box<dyn CacheHandler + Send + Sync>,
-        ));
+        ret.push((handler.get_type(), Handler::Hello(handler)));
         self.add_cache(cache.get_type(), Box::new(cache));
 
         // Add disk cache
         let (cache, handler) = DiskCache::new(event_notifier.clone());
-        ret.push((
-            handler.get_type(),
-            Box::new(handler) as Box<dyn CacheHandler + Send + Sync>,
-        ));
+        ret.push((handler.get_type(), Handler::Disk(handler)));
         self.add_cache(cache.get_type(), Box::new(cache));
 
         ret

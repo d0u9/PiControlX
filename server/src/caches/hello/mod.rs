@@ -41,7 +41,7 @@ impl DataGenerator {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct HelloCacheData {
     data: Arc<Mutex<u32>>,
 }
@@ -54,9 +54,16 @@ impl HelloCacheData {
     }
 }
 
-pub(super) struct HelloCacheHandler {
+#[derive(Debug)]
+pub(crate) struct HelloCacheHandler {
     service_type: ServiceType,
     data: HelloCacheData,
+}
+
+impl HelloCacheHandler {
+    pub(crate) fn disk_mount(&self) {
+        println!("================ disk_mount ===============");
+    }
 }
 
 impl CacheHandler for HelloCacheHandler {

@@ -34,7 +34,7 @@ impl DataGenerator {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct DiskCacheData {
     data: Arc<Mutex<u32>>,
 }
@@ -47,9 +47,16 @@ impl DiskCacheData {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct DiskCacheHandler {
     service_type: ServiceType,
     data: DiskCacheData,
+}
+
+impl DiskCacheHandler {
+    pub(crate) fn disk_mount(&self) {
+        println!("================ disk_mount ===============");
+    }
 }
 
 impl CacheHandler for DiskCacheHandler {

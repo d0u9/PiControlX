@@ -12,8 +12,8 @@ use tonic::{Request, Response, Status};
 use super::api_rpc;
 use super::api_rpc::api_server;
 use super::converter;
-use super::fetcher::Fetcher;
-use crate::caches::CacheHandler;
+use super::fetcher::{Fetcher, Fetcherhandler};
+use crate::caches::Handler;
 use crate::public::event_queue::EventQ;
 use crate::public::shutdown;
 use crate::public::{ServiceData, ServiceType};
@@ -64,18 +64,20 @@ pub(crate) struct Server {
     shutdown: shutdown::Receiver,
     addr: SocketAddr,
     fetcher: Fetcher,
+    fetcher_handler: Fetcherhandler,
     grpc_data_cache: GrpcDataCache,
 }
 
 impl Server {
     pub fn new(addr: SocketAddr) -> (Self, ServerHandler) {
         let (s, r) = shutdown::new();
-        let fetcher = Fetcher::new(r.clone());
+        let (fetcher, fetcher_handler) = Fetcher::new(r.clone());
         (
             Server {
                 shutdown: r,
                 addr,
                 fetcher,
+                fetcher_handler,
                 grpc_data_cache: GrpcDataCache::new(),
             },
             ServerHandler { shutdown: s },
@@ -94,6 +96,7 @@ impl Server {
             self.shutdown.clone(),
             data_chans.clone(),
             self.grpc_data_cache.clone(),
+            self.fetcher_handler.clone(),
         );
         let grpc_server = TonicServer::builder().add_service(api_server::ApiServer::new(service));
         let (tx, rx) = oneshot::channel::<()>();
@@ -137,7 +140,7 @@ impl Server {
     ) {
         if let Err(e) = data {
             log::error!("Server dispatcher read channel failed: {:?}", e);
-            return
+            return;
         }
 
         let v = data.as_ref().unwrap();
@@ -146,9 +149,9 @@ impl Server {
                 if let Some(response) = converter::preserved_to_disk_list_and_watch_response(data) {
                     (ServiceType::DISK, GrpcData::Disk(response.clone()))
                 } else {
-                    return
+                    return;
                 }
-            },
+            }
             ServiceData::Disk(disks) => {
                 if let Some(response) = converter::data_to_disk_list_and_watch_response(disks) {
                     (ServiceType::DISK, GrpcData::Disk(response.clone()))
@@ -167,8 +170,8 @@ impl Server {
         }
     }
 
-    pub fn add_caches(&mut self, caches: Vec<(ServiceType, Box<dyn CacheHandler + Send + Sync>)>) {
-        self.fetcher.add_caches(caches);
+    pub async fn add_caches(&mut self, caches: Vec<(ServiceType, Handler)>) {
+        self.fetcher.add_caches(caches).await;
     }
 }
 
@@ -176,6 +179,7 @@ struct GrpcService {
     shutdown: shutdown::Receiver,
     data_chans: Vec<broadcast::Sender<GrpcData>>,
     cache: GrpcDataCache,
+    fetcher_handler: Fetcherhandler,
 }
 
 impl GrpcService {
@@ -183,6 +187,7 @@ impl GrpcService {
         shutdown: shutdown::Receiver,
         data_chans: Vec<broadcast::Sender<GrpcData>>,
         grpc_data_cache: GrpcDataCache,
+        fetcher_handler: Fetcherhandler,
     ) -> Self {
         let mut last_data = Vec::with_capacity(ServiceType::LEN as usize);
         last_data.resize_with(ServiceType::LEN as usize, || ServiceData::None);
@@ -191,6 +196,7 @@ impl GrpcService {
             shutdown,
             data_chans,
             cache: grpc_data_cache,
+            fetcher_handler,
         }
     }
 }
@@ -221,7 +227,6 @@ impl api_server::Api for GrpcService {
         let d = self.cache.get(THIS_TYPE);
 
         let output = async_stream::try_stream! {
-            log::info!("-=-=-=---=-=-=-={:?}", d);
             if let GrpcData::Disk(disks) = d {
                 yield disks;
             }
@@ -245,15 +250,39 @@ impl api_server::Api for GrpcService {
     }
 
     async fn disk_mount(
-        &self, request: Request<api_rpc::DiskMountRequest>
+        &self,
+        request: Request<api_rpc::DiskMountRequest>,
     ) -> Result<Response<api_rpc::DiskMountResponse>, Status> {
         const THIS_TYPE: ServiceType = ServiceType::DISK;
-        let d = self.cache.get(THIS_TYPE);
-        dbg!(d);
+
+        let handler = self.fetcher_handler.get_cache_handler(THIS_TYPE).await;
+        // dbg!(&handler);
+        if handler.is_none() {
+            return Ok(Response::new(api_rpc::DiskMountResponse {
+                ok: false,
+                uuid: "".into(),
+                reason: "No cache handler".into(),
+            }));
+        }
+
+        let handler = handler.unwrap();
+        let handler = handler.lock().await;
+
+        // TODO: Change hello to disk
+        if let Handler::Hello(disk_handler) = &*handler {
+            log::info!("-=-=--=-=-=-1=1=-1=1-=-1");
+            disk_handler.disk_mount();
+            return Ok(Response::new(api_rpc::DiskMountResponse {
+                ok: true,
+                uuid: "123-456-7890".into(),
+                reason: "".into(),
+            }));
+        }
+
         Ok(Response::new(api_rpc::DiskMountResponse {
             ok: false,
-            uuid: "123-456-789".into(),
-            reason: "test".into(),
+            uuid: "".into(),
+            reason: "Internal error".into(),
         }))
     }
 }

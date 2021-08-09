@@ -7,9 +7,9 @@ pub mod config;
 mod caches;
 mod public;
 mod server;
+use crate::config::Config;
 use crate::public::event_queue::EventQ;
 use server::server::Server;
-use crate::config::Config;
 
 fn setup_logger() {
     TermLogger::init(
@@ -38,7 +38,7 @@ pub async fn lib_main(config: Config) {
     let addr = format!("{}:{}", config.ip, config.port);
     let addr = addr.parse().unwrap();
     let (mut server, server_handler) = Server::new(addr);
-    server.add_caches(cache_handlers);
+    server.add_caches(cache_handlers).await;
 
     let handler1 = tokio::spawn(async move {
         server.serve(event_q).await;

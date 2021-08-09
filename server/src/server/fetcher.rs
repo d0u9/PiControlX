@@ -1,29 +1,47 @@
 use log;
+use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::SendError;
+use tokio::sync::Mutex;
 
-use crate::caches::CacheHandler;
+use crate::caches::{CacheHandler, Handler};
 use crate::public::event_queue::EventQ;
 use crate::public::shutdown;
 use crate::public::{ServiceData, ServiceType};
 
+#[derive(Clone, Debug)]
+pub(super) struct CacheHandlers {
+    inner: Vec<Option<Arc<Mutex<Handler>>>>,
+}
+
+impl CacheHandlers {
+    fn new() -> Self {
+        let mut caches = Vec::with_capacity(ServiceType::LEN as usize);
+        caches.resize_with(ServiceType::LEN as usize, || None);
+        Self { inner: caches }
+    }
+}
+
 pub(super) struct Fetcher {
     shutdown: shutdown::Receiver,
-    caches: Vec<Option<Box<dyn CacheHandler + Send + Sync>>>,
+    caches_handlers: Arc<Mutex<CacheHandlers>>,
     event_queue: Option<EventQ>,
 }
 
-impl Fetcher {
-    pub(super) fn new(shutdown: shutdown::Receiver) -> Self {
-        let mut caches = Vec::with_capacity(ServiceType::LEN as usize);
-        caches.resize_with(ServiceType::LEN as usize, || None);
+#[derive(Clone, Debug)]
+pub(super) struct Fetcherhandler {
+    caches_handlers: Arc<Mutex<CacheHandlers>>,
+}
 
+impl Fetcher {
+    pub(super) fn new(shutdown: shutdown::Receiver) -> (Self, Fetcherhandler) {
+        let caches_handlers = Arc::new(Mutex::new(CacheHandlers::new()));
         let fetcher = Fetcher {
             shutdown,
-            caches,
+            caches_handlers: caches_handlers.clone(),
             event_queue: None,
         };
-        fetcher
+        (fetcher, Fetcherhandler { caches_handlers })
     }
 
     pub(super) fn add_event_queue(&mut self, q: EventQ) {
@@ -59,21 +77,14 @@ impl Fetcher {
         }
     }
 
-    pub(super) fn add_cache(
-        &mut self,
-        service_type: ServiceType,
-        cache: Box<dyn CacheHandler + Send + Sync>,
-    ) {
+    pub(super) async fn add_cache(&mut self, service_type: ServiceType, cache: Handler) {
         let idx = service_type as usize;
-        self.caches[idx] = Some(cache);
+        self.caches_handlers.lock().await.inner[idx] = Some(Arc::new(Mutex::new(cache)));
     }
 
-    pub(super) fn add_caches(
-        &mut self,
-        caches: Vec<(ServiceType, Box<dyn CacheHandler + Send + Sync>)>,
-    ) {
+    pub(super) async fn add_caches(&mut self, caches: Vec<(ServiceType, Handler)>) {
         for v in caches.into_iter() {
-            self.add_cache(v.0, v.1);
+            self.add_cache(v.0, v.1).await;
         }
     }
 
@@ -82,17 +93,23 @@ impl Fetcher {
         service_type: ServiceType,
         data_chan: &broadcast::Sender<ServiceData>,
     ) -> Result<(), SendError<ServiceData>> {
-        let cache = self.caches[service_type as usize].as_ref();
-
-        if let Some(c) = cache {
-            let data = c.fetch();
-            log::debug!(
-                "Fetcher handles data in event queue from {:?} = {:?}",
-                c.get_type(),
-                &data
-            );
-            data_chan.send(data.clone())?;
+        let cache = self.caches_handlers.lock().await;
+        let cache = cache.inner[service_type as usize].as_ref();
+        if cache.is_none() {
+            return Ok(());
         }
+        let cache = cache.unwrap().as_ref().lock().await;
+
+        let (service_type, data) = match &*cache {
+            Handler::Hello(cache) => (cache.get_type(), cache.fetch()),
+            Handler::Disk(cache) => (cache.get_type(), cache.fetch()),
+        };
+        log::debug!(
+            "Fetcher handles data in event queue from {:?} = {:?}",
+            service_type,
+            &data
+        );
+        data_chan.send(data.clone())?;
 
         Ok(())
     }
@@ -116,5 +133,13 @@ impl Fetcher {
 
         Ok(())
     }
+}
 
+impl Fetcherhandler {
+    pub async fn get_cache_handler(
+        &self,
+        service_type: ServiceType,
+    ) -> Option<Arc<Mutex<Handler>>> {
+        self.caches_handlers.lock().await.inner[service_type as usize].clone()
+    }
 }
