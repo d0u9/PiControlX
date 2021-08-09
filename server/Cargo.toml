@@ -15,13 +15,14 @@ path = "src/main.rs"
 
 [dependencies]
 futures = "0.3"
-tokio = { version = "1.9.0", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
 tokio-stream = { version =  "0.1.7", features = ["net", "sync"] }
 log = "*"
 simplelog = { version = "^0.10.0", features = ["test"] }
 prost = "0.8"
 tonic = "0.5"
 async-stream = "0.3"
+clap = "2"
 
 [build-dependencies]
 tonic-build = "0.5"

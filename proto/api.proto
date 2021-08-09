@@ -6,6 +6,7 @@ package api;
 
 service Api {
   rpc DiskListAndWatch(DiskListAndWatchRequest) returns (stream DiskListAndWatchResponse) {}
+  rpc DiskMount(DiskMountRequest) returns (DiskMountResponse) {}
 }
 
 message DiskFilter {
@@ -35,5 +36,20 @@ message Disk {
 
 message DiskListAndWatchResponse {
   repeated Disk disks = 1;
+}
+
+message DiskMountRequest {
+  enum Op {
+    Mount = 0;
+    Unmount = 1;
+  }
+  Op op = 1;
+  string uuid = 2;
+}
+
+message DiskMountResponse {
+  bool ok = 1;
+  string uuid = 2;
+  string reason = 3;
 }
 

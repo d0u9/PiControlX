@@ -243,4 +243,17 @@ impl api_server::Api for GrpcService {
             Box::pin(output) as Self::DiskListAndWatchStream
         ))
     }
+
+    async fn disk_mount(
+        &self, request: Request<api_rpc::DiskMountRequest>
+    ) -> Result<Response<api_rpc::DiskMountResponse>, Status> {
+        const THIS_TYPE: ServiceType = ServiceType::DISK;
+        let d = self.cache.get(THIS_TYPE);
+        dbg!(d);
+        Ok(Response::new(api_rpc::DiskMountResponse {
+            ok: false,
+            uuid: "123-456-789".into(),
+            reason: "test".into(),
+        }))
+    }
 }
