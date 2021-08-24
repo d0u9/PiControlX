@@ -1,0 +1,17 @@
+[package]
+name = "client"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version =  "0.1.7", features = ["net", "sync"] }
+tonic = "0.5"
+prost = "0.8"
+log = "*"
+simplelog = { version = "^0.10.0", features = ["test"] }
+
+[build-dependencies]
+tonic-build = "0.5"
