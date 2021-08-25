@@ -8,6 +8,7 @@ pub mod api_rpc {
     tonic::include_proto!("api");
 }
 
+/*
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = ApiClient::connect("http://[::1]:50051").await?;
@@ -20,8 +21,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Hello, world!");
     Ok(())
 }
+*/
 
-/*
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = ApiClient::connect("http://[::1]:50051").await?;
@@ -40,4 +41,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-*/

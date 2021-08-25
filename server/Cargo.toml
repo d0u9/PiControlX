@@ -23,6 +23,8 @@ prost = "0.8"
 tonic = "0.5"
 async-stream = "0.3"
 clap = "2"
+block-utils = "0.10.2"
+uuid = "0.8.2"
 
 [build-dependencies]
 tonic-build = "0.5"

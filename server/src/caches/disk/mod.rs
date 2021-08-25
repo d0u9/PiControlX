@@ -1,12 +1,15 @@
 use log;
 use std::sync::{Arc, Mutex};
+use uuid::Uuid;
 
 use super::{Cache, CacheHandler};
 use crate::public::event_queue::EventNotifier;
 use crate::public::shutdown;
 use crate::public::{DiskServiceData, ServiceData, ServiceType};
 
-const THIS_TYPE: ServiceType = ServiceType::_PRESERVED;
+mod fetcher;
+
+const THIS_TYPE: ServiceType = ServiceType::DISK;
 
 struct DataGenerator {
     data: DiskCacheData,
@@ -21,8 +24,13 @@ impl DataGenerator {
         }
     }
 
+    fn first_run(&mut self) {
+        fetcher::get_disks();
+    }
+
     async fn run(&mut self, mut shutdown: shutdown::Receiver) {
         log::info!("DiskCache - Data generator is running...");
+        self.first_run();
         loop {
             tokio::select! {
                 _ = shutdown.wait_on() => {
@@ -34,15 +42,38 @@ impl DataGenerator {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+struct Partition {
+    kernel: String,
+    size: u64,
+    uuid: Uuid,
+    label: String,
+    mount_path: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct DiskInfo {
+    kernel: String,
+    size: u64,        // in kb
+    partitions: Vec<Partition>,
+    // uuid: String,
+    // mount_path: Option<String>,
+}
+
+#[derive(Clone, Debug, Default)]
+struct Disks {
+    disks: Vec<DiskInfo>,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct DiskCacheData {
-    data: Arc<Mutex<u32>>,
+    data: Arc<Mutex<Disks>>,
 }
 
 impl DiskCacheData {
     fn new() -> Self {
         Self {
-            data: Arc::new(Mutex::new(0)),
+            data: Arc::new(Mutex::new(Disks::default())),
         }
     }
 }

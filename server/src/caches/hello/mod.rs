@@ -7,7 +7,7 @@ use crate::public::event_queue::{Event, EventNotifier};
 use crate::public::shutdown;
 use crate::public::{PreservedServiceData, ServiceData, ServiceType};
 
-const THIS_TYPE: ServiceType = ServiceType::DISK;
+const THIS_TYPE: ServiceType = ServiceType::_PRESERVED;
 
 struct DataGenerator {
     data: HelloCacheData,
